@@ -110,3 +110,15 @@
 - [x] Shows "page/total" (e.g. "1/8103") in small text at bottom right
 - [x] Doesn't interfere with reading content
 - [x] Positioned just above the progress bar
+
+## Story 10: Web Serial Book Upload via esptool-js ✅
+
+> *As a content preparer, after processing a book in the web UI, I can upload it directly to the connected device via USB, without needing PlatformIO or CLI tools.*
+
+**Acceptance criteria:**
+- [x] Web UI has "Upload to device via USB" button after processing
+- [x] Server builds LittleFS image using mklittlefs
+- [x] Browser uses esptool-js to flash image to device partition (0x670000)
+- [x] Connects via Web Serial to ESP32 ROM bootloader
+- [x] Device reboots and loads the new book after flash
+- [x] Works in Chrome/Edge (Web Serial API required)

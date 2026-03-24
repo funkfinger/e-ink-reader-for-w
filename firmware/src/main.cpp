@@ -20,8 +20,8 @@ static const uint8_t LINES_PER_PAGE = 5;
 static const uint16_t SCREEN_WIDTH = 250;
 static const uint16_t SCREEN_HEIGHT = 122;
 static const uint8_t PROGRESS_BAR_HEIGHT = 2;
-static const uint8_t LINE_HEIGHT = 22;     // Tightened from font's 29px yAdvance
-static const uint8_t TOP_MARGIN = 14;      // First baseline offset from top
+static const uint8_t LINE_HEIGHT = 22;
+static const uint8_t TOP_MARGIN = 14;
 
 // --- Button State ---
 static bool lastButtonState = HIGH;
@@ -86,7 +86,6 @@ bool loadBookIndex() {
     idxFile.read((uint8_t*)pageOffsets, idxSize);
     idxFile.close();
 
-    // Get book.txt file size for bounds checking
     File bookFile = LittleFS.open("/book.txt", "r");
     if (!bookFile) {
         free(pageOffsets);
@@ -109,7 +108,6 @@ void displayPage() {
         currentPage = totalPages - 1;
     }
 
-    // Read page text from book.txt
     File bookFile = LittleFS.open("/book.txt", "r");
     if (!bookFile) {
         showError("Cannot open", "book.txt");
@@ -122,7 +120,6 @@ void displayPage() {
         : bookFileSize;
     uint32_t pageLen = endOffset - startOffset;
 
-    // Cap read size to a reasonable buffer
     if (pageLen > 512) pageLen = 512;
 
     char buf[513];
@@ -137,7 +134,6 @@ void displayPage() {
     display.setFont(&OpenDyslexic_Regular8pt7b);
     display.setTextSize(1);
 
-    // Render each line with manual positioning
     char* line = buf;
     uint8_t lineNum = 0;
     for (char* p = buf; *p && lineNum < LINES_PER_PAGE; p++) {
@@ -149,14 +145,13 @@ void displayPage() {
             lineNum++;
         }
     }
-    // Print last line if no trailing newline
     if (*line && lineNum < LINES_PER_PAGE) {
         display.setCursor(2, TOP_MARGIN + lineNum * LINE_HEIGHT);
         display.print(line);
     }
 
-    // Page number in small default font, bottom right
-    display.setFont(NULL);  // Switch to built-in 6x8 font
+    // Page number
+    display.setFont(NULL);
     char pageNum[16];
     snprintf(pageNum, sizeof(pageNum), "%lu/%lu",
              (unsigned long)(currentPage + 1), (unsigned long)totalPages);
@@ -165,7 +160,7 @@ void displayPage() {
                       SCREEN_HEIGHT - PROGRESS_BAR_HEIGHT - 9);
     display.print(pageNum);
 
-    // Progress bar at bottom
+    // Progress bar
     float progress = (float)(currentPage + 1) / (float)totalPages;
     uint16_t barWidth = (uint16_t)(progress * SCREEN_WIDTH);
     display.fillRect(0, SCREEN_HEIGHT - PROGRESS_BAR_HEIGHT,
@@ -239,11 +234,9 @@ void setup() {
     pinMode(BUTTON_PIN, INPUT_PULLUP);
     lastActivityMs = millis();
 
-    // Initialize NVS for page persistence
     prefs.begin("reader", false);
     currentPage = prefs.getUInt("page", 0);
 
-    // Mount LittleFS and load book
     if (!LittleFS.begin(true)) {
         showError("LittleFS", "mount failed");
         return;
@@ -251,11 +244,10 @@ void setup() {
 
     bookLoaded = loadBookIndex();
     if (!bookLoaded) {
-        showError("No book found.", "Upload book.txt + book.idx");
+        showError("No book found.", "Upload via web UI");
         return;
     }
 
-    // Clamp page to valid range
     if (currentPage >= totalPages) {
         currentPage = 0;
     }
@@ -272,7 +264,6 @@ void loop() {
 
     switch (press) {
         case PressType::SINGLE:
-            // Next page
             if (currentPage + 1 < totalPages) {
                 currentPage++;
                 savePage();
@@ -283,7 +274,6 @@ void loop() {
             break;
 
         case PressType::DOUBLE:
-            // Previous page
             if (currentPage > 0) {
                 currentPage--;
                 savePage();
@@ -292,7 +282,6 @@ void loop() {
             break;
 
         case PressType::LONG:
-            // Future: sync mode. For now, just show page info.
             {
                 char info[64];
                 snprintf(info, sizeof(info), "Page %lu / %lu",
