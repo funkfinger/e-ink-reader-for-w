@@ -1,6 +1,7 @@
 #include <heltec-eink-modules.h>
 #include <LittleFS.h>
 #include <Preferences.h>
+#include "fonts/OpenDyslexic8pt7b.h"
 
 EInkDisplay_WirelessPaperV1_2 display;
 Preferences prefs;
@@ -15,10 +16,12 @@ static const unsigned long DOUBLE_PRESS_WINDOW_MS = 300;
 static const unsigned long SLEEP_TIMEOUT_MS = 30000;  // 30 seconds
 
 // --- Display Layout ---
-static const uint8_t LINES_PER_PAGE = 6;
+static const uint8_t LINES_PER_PAGE = 5;
 static const uint16_t SCREEN_WIDTH = 250;
 static const uint16_t SCREEN_HEIGHT = 122;
 static const uint8_t PROGRESS_BAR_HEIGHT = 2;
+static const uint8_t LINE_HEIGHT = 22;     // Tightened from font's 29px yAdvance
+static const uint8_t TOP_MARGIN = 14;      // First baseline offset from top
 
 // --- Button State ---
 static bool lastButtonState = HIGH;
@@ -44,7 +47,8 @@ enum class PressType { NONE, SINGLE, DOUBLE, LONG };
 void showMessage(const char* msg) {
     display.clearMemory();
     display.landscape();
-    display.setTextSize(2);
+    display.setFont(&OpenDyslexic_Regular8pt7b);
+    display.setTextSize(1);
     display.printCenter(msg);
     display.update();
 }
@@ -130,9 +134,36 @@ void displayPage() {
     // Render page
     display.clearMemory();
     display.landscape();
+    display.setFont(&OpenDyslexic_Regular8pt7b);
     display.setTextSize(1);
-    display.setCursor(0, 8);
-    display.print(buf);
+
+    // Render each line with manual positioning
+    char* line = buf;
+    uint8_t lineNum = 0;
+    for (char* p = buf; *p && lineNum < LINES_PER_PAGE; p++) {
+        if (*p == '\n') {
+            *p = '\0';
+            display.setCursor(2, TOP_MARGIN + lineNum * LINE_HEIGHT);
+            display.print(line);
+            line = p + 1;
+            lineNum++;
+        }
+    }
+    // Print last line if no trailing newline
+    if (*line && lineNum < LINES_PER_PAGE) {
+        display.setCursor(2, TOP_MARGIN + lineNum * LINE_HEIGHT);
+        display.print(line);
+    }
+
+    // Page number in small default font, bottom right
+    display.setFont(NULL);  // Switch to built-in 6x8 font
+    char pageNum[16];
+    snprintf(pageNum, sizeof(pageNum), "%lu/%lu",
+             (unsigned long)(currentPage + 1), (unsigned long)totalPages);
+    int16_t pnWidth = strlen(pageNum) * 6;
+    display.setCursor(SCREEN_WIDTH - pnWidth - 2,
+                      SCREEN_HEIGHT - PROGRESS_BAR_HEIGHT - 9);
+    display.print(pageNum);
 
     // Progress bar at bottom
     float progress = (float)(currentPage + 1) / (float)totalPages;

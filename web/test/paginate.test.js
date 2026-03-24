@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { wordWrap, paginate, buildIndex } from "../lib/paginate.js";
+import { wordWrap, paginate, buildIndex, sanitizeText } from "../lib/paginate.js";
 
 const CHARS_PER_LINE = 18;
 const LINES_PER_PAGE = 6;
@@ -97,5 +97,39 @@ describe("buildIndex", () => {
     const { text, index } = buildIndex([]);
     expect(text).toBe("");
     expect(index.length).toBe(0);
+  });
+});
+
+describe("sanitizeText", () => {
+  it("replaces curly single quotes with straight quotes", () => {
+    expect(sanitizeText("\u2018hello\u2019")).toBe("'hello'");
+  });
+
+  it("replaces curly double quotes with straight quotes", () => {
+    expect(sanitizeText("\u201Chello\u201D")).toBe('"hello"');
+  });
+
+  it("replaces em dash with double hyphen", () => {
+    expect(sanitizeText("word\u2014word")).toBe("word--word");
+  });
+
+  it("replaces en dash with hyphen", () => {
+    expect(sanitizeText("1\u20132")).toBe("1-2");
+  });
+
+  it("replaces ellipsis character with three dots", () => {
+    expect(sanitizeText("wait\u2026")).toBe("wait...");
+  });
+
+  it("strips remaining non-ASCII characters", () => {
+    expect(sanitizeText("caf\u00E9")).toBe("caf");
+  });
+
+  it("preserves normal ASCII text unchanged", () => {
+    expect(sanitizeText("Hello, world! 123")).toBe("Hello, world! 123");
+  });
+
+  it("preserves newlines and tabs", () => {
+    expect(sanitizeText("line1\nline2\ttab")).toBe("line1\nline2\ttab");
   });
 });

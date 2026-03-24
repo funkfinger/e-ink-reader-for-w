@@ -78,3 +78,32 @@
 **Known issues:**
 - Font is too small (using default GFX font, need OpenDyslexic Mono)
 - Odd characters from Unicode in source text (curly quotes, em dashes, etc.)
+
+## Story 7: OpenDyslexic Mono Font & Display Layout 🔧
+
+> *As a user, the text on screen is rendered in a large, readable OpenDyslexic Mono font with proper layout, so it's comfortable to read for someone with dyslexia.*
+
+**Acceptance criteria:**
+- [ ] OpenDyslexic Mono bitmap font baked into firmware
+- [ ] ~15-20 characters per line, ~5-7 lines per page (per design doc)
+- [ ] Text fills the screen with minimal chrome
+- [ ] Pre-processor strips/replaces non-ASCII characters (curly quotes, em dashes, etc.)
+- [ ] Pre-processor line width and page size match firmware font metrics
+- [ ] Unit tests for character sanitization
+
+## Story 8: Book Start Offset (planned)
+
+> *As a content preparer, I can specify where the actual story begins in the text file, so the reader skips introductory metadata (title pages, copyright, archive headers, etc.)*
+
+**Acceptance criteria:**
+- [ ] Web UI preview lets user set which page the book starts on
+- [ ] Output book.txt and book.idx only contain content from the start point forward
+
+## Story 9: Page Number Display ✅
+
+> *As a user, I can see the current page number and total pages in small print on the screen, so I know my reading progress.*
+
+**Acceptance criteria:**
+- [x] Shows "page/total" (e.g. "1/8103") in small text at bottom right
+- [x] Doesn't interfere with reading content
+- [x] Positioned just above the progress bar

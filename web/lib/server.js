@@ -2,10 +2,10 @@ import express from "express";
 import multer from "multer";
 import archiver from "archiver";
 import path from "path";
-import { wordWrap, paginate, buildIndex } from "./paginate.js";
+import { sanitizeText, wordWrap, paginate, buildIndex } from "./paginate.js";
 
-const CHARS_PER_LINE = 18;
-const LINES_PER_PAGE = 6;
+const CHARS_PER_LINE = 16;
+const LINES_PER_PAGE = 5;
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -95,7 +95,7 @@ export function createApp() {
       return res.status(400).send("Only .txt files are supported");
     }
 
-    const content = req.file.buffer.toString("utf8");
+    const content = sanitizeText(req.file.buffer.toString("utf8"));
     const lines = wordWrap(content, CHARS_PER_LINE);
     const pages = paginate(lines, LINES_PER_PAGE);
 
@@ -114,7 +114,7 @@ export function createApp() {
       return res.status(400).send("Only .txt files are supported");
     }
 
-    const content = req.file.buffer.toString("utf8");
+    const content = sanitizeText(req.file.buffer.toString("utf8"));
     const lines = wordWrap(content, CHARS_PER_LINE);
     const pages = paginate(lines, LINES_PER_PAGE);
     const { text, index } = buildIndex(pages);

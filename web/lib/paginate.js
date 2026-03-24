@@ -1,5 +1,22 @@
 /**
- * Word-wrap text to a fixed character width (monospace).
+ * Replace common Unicode characters with ASCII equivalents,
+ * then strip any remaining non-ASCII characters.
+ * Preserves newlines, tabs, and printable ASCII.
+ * @param {string} input
+ * @returns {string} sanitized ASCII text
+ */
+export function sanitizeText(input) {
+  return input
+    .replace(/[\u2018\u2019\u201A]/g, "'")     // curly single quotes
+    .replace(/[\u201C\u201D\u201E]/g, '"')      // curly double quotes
+    .replace(/\u2014/g, "--")                    // em dash
+    .replace(/\u2013/g, "-")                     // en dash
+    .replace(/\u2026/g, "...")                   // ellipsis
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, ""); // strip non-ASCII
+}
+
+/**
+ * Word-wrap text to a fixed character width.
  * Preserves existing newlines. Breaks long words if necessary.
  * @param {string} input
  * @param {number} maxWidth - characters per line
