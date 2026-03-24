@@ -31,6 +31,11 @@ export function createApp() {
     .page-num { color: #888; font-size: 12px; }
     #download-form { display: none; margin-top: 1rem; }
     .info { color: #666; margin-bottom: 1rem; }
+    .start-page { margin-bottom: 0.5rem; }
+    .start-page label { font-size: 14px; }
+    .start-page input { width: 60px; padding: 2px 4px; }
+    .start-page button { font-size: 12px; margin-left: 0.5rem; }
+    .page.skipped { opacity: 0.3; }
   </style>
 </head>
 <body>
@@ -42,8 +47,14 @@ export function createApp() {
     <button type="submit">Process</button>
   </form>
 
+  <div id="start-page-controls" class="start-page" style="display:none">
+    <label>Start book at page: <input type="number" id="start-page" min="1" value="1"></label>
+    <button id="apply-start">Apply</button>
+  </div>
+
   <form id="download-form" method="POST" action="/download" enctype="multipart/form-data">
     <input type="file" name="file" accept=".txt" id="download-file" style="display:none">
+    <input type="hidden" name="startPage" id="download-start-page" value="1">
     <button type="submit">Download book.zip</button>
   </form>
 
@@ -53,7 +64,13 @@ export function createApp() {
     const uploadForm = document.getElementById('upload-form');
     const downloadForm = document.getElementById('download-form');
     const downloadFile = document.getElementById('download-file');
+    const downloadStartPage = document.getElementById('download-start-page');
+    const startPageControls = document.getElementById('start-page-controls');
+    const startPageInput = document.getElementById('start-page');
+    const applyStartBtn = document.getElementById('apply-start');
     const preview = document.getElementById('preview');
+
+    let allPages = [];
 
     uploadForm.addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -62,21 +79,38 @@ export function createApp() {
       if (!res.ok) {
         preview.textContent = 'Error: ' + (await res.text());
         downloadForm.style.display = 'none';
+        startPageControls.style.display = 'none';
         return;
       }
       const data = await res.json();
-      preview.innerHTML = '';
-      data.pages.forEach((page, i) => {
-        const div = document.createElement('div');
-        div.className = 'page';
-        div.innerHTML = '<span class="page-num">Page ' + (i + 1) + ' of ' + data.totalPages + '</span>\\n' + page.map(l => escapeHtml(l)).join('\\n');
-        preview.appendChild(div);
-      });
+      allPages = data.pages;
+      startPageInput.value = 1;
+      startPageInput.max = allPages.length;
+      startPageControls.style.display = 'block';
+      renderPreview(1);
 
-      // Copy the file input for download
       downloadFile.files = uploadForm.querySelector('input[type="file"]').files;
       downloadForm.style.display = 'block';
     });
+
+    applyStartBtn.addEventListener('click', () => {
+      const sp = parseInt(startPageInput.value, 10) || 1;
+      renderPreview(sp);
+    });
+
+    function renderPreview(startPage) {
+      downloadStartPage.value = startPage;
+      preview.innerHTML = '';
+      allPages.forEach((page, i) => {
+        const pageNum = i + 1;
+        const skipped = pageNum < startPage;
+        const div = document.createElement('div');
+        div.className = 'page' + (skipped ? ' skipped' : '');
+        const label = skipped ? 'Page ' + pageNum + ' (skipped)' : 'Page ' + (pageNum - startPage + 1) + ' of ' + (allPages.length - startPage + 1);
+        div.innerHTML = '<span class="page-num">' + label + '</span>\\n' + page.map(l => escapeHtml(l)).join('\\n');
+        preview.appendChild(div);
+      });
+    }
 
     function escapeHtml(s) {
       return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -97,7 +131,10 @@ export function createApp() {
 
     const content = sanitizeText(req.file.buffer.toString("utf8"));
     const lines = wordWrap(content, CHARS_PER_LINE);
-    const pages = paginate(lines, LINES_PER_PAGE);
+    const allPages = paginate(lines, LINES_PER_PAGE);
+
+    const startPage = parseInt(req.body?.startPage || "1", 10);
+    const pages = allPages.slice(Math.max(0, startPage - 1));
 
     res.json({
       pages,
@@ -116,7 +153,13 @@ export function createApp() {
 
     const content = sanitizeText(req.file.buffer.toString("utf8"));
     const lines = wordWrap(content, CHARS_PER_LINE);
-    const pages = paginate(lines, LINES_PER_PAGE);
+    const allPages = paginate(lines, LINES_PER_PAGE);
+
+    const startPage = parseInt(req.body?.startPage || "1", 10);
+    if (startPage > allPages.length) {
+      return res.status(400).send("startPage exceeds total pages");
+    }
+    const pages = allPages.slice(Math.max(0, startPage - 1));
     const { text, index } = buildIndex(pages);
 
     res.set("Content-Type", "application/zip");

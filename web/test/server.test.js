@@ -52,4 +52,53 @@ describe("POST /download", () => {
     expect(res.headers["content-type"]).toMatch(/zip/);
     expect(res.headers["content-disposition"]).toMatch(/book\.zip/);
   });
+
+  it("respects startPage parameter and trims earlier pages", async () => {
+    // Build content that spans multiple pages (5 lines/page, 16 chars/line)
+    const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
+    const content = lines.join("\n");
+    const res = await request(app)
+      .post("/download")
+      .field("startPage", "2")
+      .attach("file", Buffer.from(content), "test.txt");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/zip/);
+  });
+
+  it("returns 400 when startPage exceeds total pages", async () => {
+    const content = "short text";
+    const res = await request(app)
+      .post("/download")
+      .field("startPage", "999")
+      .attach("file", Buffer.from(content), "test.txt");
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("POST /download with startPage", () => {
+  it("produces fewer pages when startPage is set", async () => {
+    const lines = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`);
+    const content = lines.join("\n");
+
+    // Get full page count
+    const fullRes = await request(app)
+      .post("/process")
+      .attach("file", Buffer.from(content), "test.txt");
+    const fullPages = fullRes.body.totalPages;
+
+    // Get trimmed page count via process with startPage
+    const trimRes = await request(app)
+      .post("/process")
+      .field("startPage", "2")
+      .attach("file", Buffer.from(content), "test.txt");
+    const trimPages = trimRes.body.totalPages;
+
+    expect(trimPages).toBe(fullPages - 1);
+    // First page of trimmed output should not start with original page 1 lines
+    const firstPageLines = trimRes.body.pages[0];
+    expect(firstPageLines[0]).not.toBe("line 1");
+    expect(firstPageLines[0]).not.toBe("line 2");
+  });
 });

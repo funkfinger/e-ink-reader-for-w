@@ -91,13 +91,16 @@
 - [ ] Pre-processor line width and page size match firmware font metrics
 - [ ] Unit tests for character sanitization
 
-## Story 8: Book Start Offset (planned)
+## Story 8: Book Start Offset ✅
 
 > *As a content preparer, I can specify where the actual story begins in the text file, so the reader skips introductory metadata (title pages, copyright, archive headers, etc.)*
 
 **Acceptance criteria:**
-- [ ] Web UI preview lets user set which page the book starts on
-- [ ] Output book.txt and book.idx only contain content from the start point forward
+- [x] Web UI preview lets user set which page the book starts on
+- [x] Skipped pages shown dimmed in preview
+- [x] Output book.txt and book.idx only contain content from the start point forward
+- [x] Returns 400 when startPage exceeds total pages
+- [x] Covered by integration tests (29 total passing)
 
 ## Story 9: Page Number Display ✅
 
