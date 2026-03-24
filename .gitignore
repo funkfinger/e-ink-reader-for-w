@@ -1,0 +1,8 @@
+.pio
+.vscode
+.idea
+node_modules
+*.o
+*.a
+*.so
+*.dylib
