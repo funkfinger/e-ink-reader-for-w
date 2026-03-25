@@ -41,8 +41,28 @@ static uint32_t* pageOffsets = nullptr;
 static uint32_t bookFileSize = 0;
 static bool bookLoaded = false;
 
+// --- App Mode ---
+enum class AppMode { READING, MENU, JUMP_TO_PAGE };
+static AppMode appMode = AppMode::READING;
+
+// --- Menu State ---
+enum class MenuItem { PAGE_INFO, JUMP_TO_PAGE, SLEEP_NOW, COUNT };
+static uint8_t menuIndex = 0;
+static const char* menuLabels[] = { "Page Info", "Jump to Page", "Sleep Now" };
+
+// --- Jump to Page State ---
+static uint8_t jumpDigits[5] = {0, 0, 0, 0, 0};  // Up to 99999
+static uint8_t jumpDigitIndex = 0;
+static uint8_t jumpNumDigits = 1;  // How many digits needed for totalPages
+
 // --- Press Types ---
 enum class PressType { NONE, SINGLE, DOUBLE, LONG };
+
+// --- Forward Declarations ---
+bool loadBookIndex();
+void displayPage();
+void showMenu();
+void showJumpToPage();
 
 void showMessage(const char* msg) {
     display.clearMemory();
@@ -65,6 +85,121 @@ void showError(const char* line1, const char* line2 = nullptr) {
     }
     display.update();
 }
+
+// --- Menu Display ---
+
+void showMenu() {
+    display.clearMemory();
+    display.landscape();
+    display.setFont(&OpenDyslexic_Regular8pt7b);
+    display.setTextSize(1);
+
+    // Title
+    display.setCursor(2, TOP_MARGIN);
+    display.print("-- Menu --");
+
+    // Menu items
+    uint8_t count = (uint8_t)MenuItem::COUNT;
+    for (uint8_t i = 0; i < count; i++) {
+        display.setCursor(10, TOP_MARGIN + (i + 1) * LINE_HEIGHT);
+        if (i == menuIndex) {
+            display.print("> ");
+        } else {
+            display.print("  ");
+        }
+        display.print(menuLabels[i]);
+    }
+
+    // Hint at bottom
+    display.setFont(NULL);
+    display.setCursor(2, SCREEN_HEIGHT - 10);
+    display.print("1x:next  2x:select  hold:exit");
+
+    display.update();
+}
+
+void showPageInfo() {
+    char info[64];
+    snprintf(info, sizeof(info), "Page %lu / %lu",
+             (unsigned long)(currentPage + 1),
+             (unsigned long)totalPages);
+    showMessage(info);
+    delay(2000);
+    showMenu();
+}
+
+// --- Jump to Page ---
+
+void initJumpToPage() {
+    // Calculate how many digits we need
+    uint32_t tp = totalPages;
+    jumpNumDigits = 0;
+    while (tp > 0) {
+        jumpNumDigits++;
+        tp /= 10;
+    }
+    if (jumpNumDigits == 0) jumpNumDigits = 1;
+    if (jumpNumDigits > 5) jumpNumDigits = 5;
+
+    // Initialize all digits to 0
+    for (uint8_t i = 0; i < 5; i++) jumpDigits[i] = 0;
+    jumpDigitIndex = 0;
+    appMode = AppMode::JUMP_TO_PAGE;
+    showJumpToPage();
+}
+
+void showJumpToPage() {
+    display.clearMemory();
+    display.landscape();
+    display.setFont(&OpenDyslexic_Regular8pt7b);
+    display.setTextSize(1);
+
+    display.setCursor(2, TOP_MARGIN);
+    display.print("Jump to page:");
+
+    // Draw the digit entry — use default font for larger, clearer digits
+    display.setFont(NULL);
+    display.setTextSize(3);  // Big digits
+
+    // Calculate total width for centering
+    uint16_t digitWidth = 18 * jumpNumDigits + 6 * (jumpNumDigits - 1);  // 18px per digit + 6px gaps
+    int16_t startX = (SCREEN_WIDTH - digitWidth) / 2;
+    int16_t digitY = 45;
+
+    for (uint8_t i = 0; i < jumpNumDigits; i++) {
+        int16_t x = startX + i * 24;
+        display.setCursor(x, digitY);
+        display.print(jumpDigits[i]);
+
+        // Underline the active digit
+        if (i == jumpDigitIndex) {
+            display.fillRect(x, digitY + 25, 18, 3, BLACK);
+        }
+    }
+
+    // Show max page hint
+    display.setTextSize(1);
+    char hint[32];
+    snprintf(hint, sizeof(hint), "max: %lu", (unsigned long)totalPages);
+    display.setCursor(2, SCREEN_HEIGHT - 10);
+    display.print(hint);
+
+    // Show controls hint on right
+    display.setCursor(120, SCREEN_HEIGHT - 10);
+    display.print("1x:+1  2x:ok  hold:cancel");
+
+    display.update();
+}
+
+uint32_t getJumpPageNumber() {
+    uint32_t page = 0;
+    for (uint8_t i = 0; i < jumpNumDigits; i++) {
+        page = page * 10 + jumpDigits[i];
+    }
+    return page;
+}
+
+// --- Book Loading & Display ---
 
 bool loadBookIndex() {
     File idxFile = LittleFS.open("/book.idx", "r");
@@ -152,6 +287,7 @@ void displayPage() {
 
     // Page number
     display.setFont(NULL);
+    display.setTextSize(1);
     char pageNum[16];
     snprintf(pageNum, sizeof(pageNum), "%lu/%lu",
              (unsigned long)(currentPage + 1), (unsigned long)totalPages);
@@ -230,6 +366,114 @@ PressType readButton() {
     return result;
 }
 
+// --- Mode Handlers ---
+
+void handleReading(PressType press) {
+    switch (press) {
+        case PressType::SINGLE:
+            if (currentPage + 1 < totalPages) {
+                currentPage++;
+                savePage();
+                displayPage();
+            } else {
+                showMessage("End of book");
+            }
+            break;
+
+        case PressType::DOUBLE:
+            if (currentPage > 0) {
+                currentPage--;
+                savePage();
+                displayPage();
+            }
+            break;
+
+        case PressType::LONG:
+            appMode = AppMode::MENU;
+            menuIndex = 0;
+            showMenu();
+            break;
+
+        default:
+            break;
+    }
+}
+
+void handleMenu(PressType press) {
+    switch (press) {
+        case PressType::SINGLE:
+            // Cycle through menu items
+            menuIndex = (menuIndex + 1) % (uint8_t)MenuItem::COUNT;
+            showMenu();
+            break;
+
+        case PressType::DOUBLE:
+            // Select current item
+            switch ((MenuItem)menuIndex) {
+                case MenuItem::PAGE_INFO:
+                    showPageInfo();
+                    break;
+                case MenuItem::JUMP_TO_PAGE:
+                    initJumpToPage();
+                    break;
+                case MenuItem::SLEEP_NOW:
+                    appMode = AppMode::READING;
+                    enterDeepSleep();
+                    break;
+                default:
+                    break;
+            }
+            break;
+
+        case PressType::LONG:
+            // Exit menu
+            appMode = AppMode::READING;
+            displayPage();
+            break;
+
+        default:
+            break;
+    }
+}
+
+void handleJumpToPage(PressType press) {
+    switch (press) {
+        case PressType::SINGLE:
+            // Cycle current digit 0-9
+            jumpDigits[jumpDigitIndex] = (jumpDigits[jumpDigitIndex] + 1) % 10;
+            showJumpToPage();
+            break;
+
+        case PressType::DOUBLE:
+            // Confirm current digit, move to next
+            jumpDigitIndex++;
+            if (jumpDigitIndex >= jumpNumDigits) {
+                // All digits entered — perform jump
+                uint32_t targetPage = getJumpPageNumber();
+                if (targetPage < 1) targetPage = 1;
+                if (targetPage > totalPages) targetPage = totalPages;
+                currentPage = targetPage - 1;  // 0-indexed
+                savePage();
+                appMode = AppMode::READING;
+                displayPage();
+            } else {
+                showJumpToPage();
+            }
+            break;
+
+        case PressType::LONG:
+            // Cancel — back to menu
+            appMode = AppMode::MENU;
+            showMenu();
+            break;
+
+        default:
+            break;
+    }
+}
+
+// --- Setup & Loop ---
+
 void setup() {
     pinMode(BUTTON_PIN, INPUT_PULLUP);
     lastActivityMs = millis();
@@ -262,40 +506,20 @@ void loop() {
         lastActivityMs = millis();
     }
 
-    switch (press) {
-        case PressType::SINGLE:
-            if (currentPage + 1 < totalPages) {
-                currentPage++;
-                savePage();
-                displayPage();
-            } else {
-                showMessage("End of book");
-            }
+    switch (appMode) {
+        case AppMode::READING:
+            handleReading(press);
             break;
-
-        case PressType::DOUBLE:
-            if (currentPage > 0) {
-                currentPage--;
-                savePage();
-                displayPage();
-            }
+        case AppMode::MENU:
+            handleMenu(press);
             break;
-
-        case PressType::LONG:
-            {
-                char info[64];
-                snprintf(info, sizeof(info), "Page %lu / %lu",
-                         (unsigned long)(currentPage + 1),
-                         (unsigned long)totalPages);
-                showMessage(info);
-            }
-            break;
-
-        default:
+        case AppMode::JUMP_TO_PAGE:
+            handleJumpToPage(press);
             break;
     }
 
-    if ((millis() - lastActivityMs) >= SLEEP_TIMEOUT_MS) {
+    // Only sleep from reading mode
+    if (appMode == AppMode::READING && (millis() - lastActivityMs) >= SLEEP_TIMEOUT_MS) {
         enterDeepSleep();
     }
 }

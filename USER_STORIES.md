@@ -122,3 +122,18 @@
 - [x] Connects via Web Serial to ESP32 ROM bootloader
 - [x] Device reboots and loads the new book after flash
 - [x] Works in Chrome/Edge (Web Serial API required)
+
+## Story 11: Menu System with Page Jump ✅
+
+> *As a user, I can long press to enter a menu, navigate options with single press, and select with double press, so I can access features like jumping to a specific page.*
+
+**Acceptance criteria:**
+- [x] Long press enters menu mode
+- [x] Single press cycles through menu items
+- [x] Double press selects current item
+- [x] Long press exits menu back to reading
+- [x] Menu items: Page Info, Jump to Page, Sleep Now
+- [x] Jump to Page: digit-by-digit entry (single press cycles 0-9, double press confirms digit)
+- [x] Display shows current menu item / page number clearly
+- [x] After jump, saves new position to NVS
+- [x] Sleep timer disabled while in menu/jump modes
