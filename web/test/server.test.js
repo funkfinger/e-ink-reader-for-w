@@ -1,8 +1,21 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
+import JSZip from "jszip";
 import { createApp } from "../lib/server.js";
 
 const app = createApp();
+
+// Helper to build a minimal EPUB buffer
+async function buildTestEpub(bodyHtml) {
+  const zip = new JSZip();
+  zip.file("META-INF/container.xml",
+    `<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container" version="1.0"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+  zip.file("OEBPS/content.opf",
+    `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Test</dc:title></metadata><manifest><item id="ch0" href="ch0.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="ch0"/></spine></package>`);
+  zip.file("OEBPS/ch0.xhtml",
+    `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>Test</title></head><body>${bodyHtml}</body></html>`);
+  return zip.generateAsync({ type: "nodebuffer" });
+}
 
 describe("GET /", () => {
   it("returns the upload page", async () => {
@@ -32,10 +45,30 @@ describe("POST /process", () => {
     expect(res.body.totalPages).toBe(res.body.pages.length);
   });
 
-  it("rejects non-.txt files", async () => {
+  it("rejects unsupported file types", async () => {
     const res = await request(app)
       .post("/process")
       .attach("file", Buffer.from("<html></html>"), "test.html");
+
+    expect(res.status).toBe(400);
+  });
+
+  it("processes an .epub file and returns JSON with pages", async () => {
+    const epub = await buildTestEpub("<p>Hello from an epub file with enough words to fill a page.</p>");
+    const res = await request(app)
+      .post("/process")
+      .attach("file", epub, "test.epub");
+
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/json/);
+    expect(res.body.pages).toBeInstanceOf(Array);
+    expect(res.body.pages.length).toBeGreaterThan(0);
+  });
+
+  it("rejects an invalid epub", async () => {
+    const res = await request(app)
+      .post("/process")
+      .attach("file", Buffer.from("not a zip"), "bad.epub");
 
     expect(res.status).toBe(400);
   });

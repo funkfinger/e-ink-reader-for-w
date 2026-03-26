@@ -137,3 +137,20 @@
 - [x] Display shows current menu item / page number clearly
 - [x] After jump, saves new position to NVS
 - [x] Sleep timer disabled while in menu/jump modes
+
+## Story 12: EPUB Support in Pre-processor ✅
+
+> *As a content preparer, I can upload an `.epub` file to the web UI, and it extracts and processes the text content the same way as a `.txt` file, so I can use standard ebook files from sources like Project Gutenberg.*
+
+**Acceptance criteria:**
+- [x] Web UI accepts `.epub` files in addition to `.txt`
+- [x] Extracts text content from EPUB's XHTML chapters in reading order (via OPF spine)
+- [x] Strips HTML tags; `<p>` → `\n\n`, `<br>` → `\n`, headings → `\n\n`
+- [x] Replaces `<img>` with `[alt text]` if available, strips silently otherwise
+- [x] Requires `container.xml` and OPF (skips `mimetype` check)
+- [x] Shared `extractText(file)` function — endpoints are format-agnostic
+- [x] Applies same sanitization, word-wrap, and pagination
+- [x] Preview, download, and flash-to-device all work with EPUB input
+- [x] Rejects invalid/corrupt EPUB files with a clear error
+- [x] Unit tests for EPUB text extraction (11 tests, programmatic fixture)
+- [x] Integration tests for endpoints with `.epub` files (42 total passing)

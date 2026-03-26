@@ -6,6 +6,7 @@ import { execSync } from "child_process";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { sanitizeText, wordWrap, paginate, buildIndex } from "./paginate.js";
+import { extractTextFromEpub } from "./epub.js";
 
 const MKLITTLEFS = process.env.MKLITTLEFS || "/Users/jayw/.platformio/packages/tool-mklittlefs/mklittlefs";
 // LittleFS partition: 0x180000 = 1572864 bytes, block size 4096
@@ -17,6 +18,30 @@ const CHARS_PER_LINE = 16;
 const LINES_PER_PAGE = 5;
 
 const upload = multer({ storage: multer.memoryStorage() });
+
+const ACCEPTED_EXTENSIONS = [".txt", ".epub"];
+
+/**
+ * Extract plain text from an uploaded file (txt or epub).
+ * @param {object} file - multer file object
+ * @returns {Promise<string>} sanitized plain text
+ */
+async function extractText(file) {
+  const ext = path.extname(file.originalname).toLowerCase();
+
+  if (!ACCEPTED_EXTENSIONS.includes(ext)) {
+    throw new Error("Unsupported file type. Upload .txt or .epub");
+  }
+
+  let raw;
+  if (ext === ".epub") {
+    raw = await extractTextFromEpub(file.buffer);
+  } else {
+    raw = file.buffer.toString("utf8");
+  }
+
+  return sanitizeText(raw);
+}
 
 export function createApp() {
   const app = express();
@@ -54,10 +79,10 @@ export function createApp() {
 </head>
 <body>
   <h1>E-Ink Reader</h1>
-  <p class="info">Upload a .txt file to preview and download formatted book files for the device.</p>
+  <p class="info">Upload a .txt or .epub file to preview and download formatted book files for the device.</p>
 
   <form id="upload-form" enctype="multipart/form-data">
-    <input type="file" name="file" accept=".txt" required>
+    <input type="file" name="file" accept=".txt,.epub" required>
     <button type="submit">Process</button>
   </form>
 
@@ -67,7 +92,7 @@ export function createApp() {
   </div>
 
   <form id="download-form" method="POST" action="/download" enctype="multipart/form-data">
-    <input type="file" name="file" accept=".txt" id="download-file" style="display:none">
+    <input type="file" name="file" accept=".txt,.epub" id="download-file" style="display:none">
     <input type="hidden" name="startPage" id="download-start-page" value="1">
     <button type="submit">Download book.zip</button>
   </form>
@@ -222,94 +247,96 @@ export function createApp() {
 </html>`);
   });
 
-  app.post("/process", upload.single("file"), (req, res) => {
+  app.post("/process", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).send("No file uploaded");
     }
 
-    if (!req.file.originalname.endsWith(".txt")) {
-      return res.status(400).send("Only .txt files are supported");
+    try {
+      const content = await extractText(req.file);
+      const lines = wordWrap(content, CHARS_PER_LINE);
+      const allPages = paginate(lines, LINES_PER_PAGE);
+
+      const startPage = parseInt(req.body?.startPage || "1", 10);
+      const pages = allPages.slice(Math.max(0, startPage - 1));
+
+      res.json({
+        pages,
+        totalPages: pages.length,
+      });
+    } catch (err) {
+      return res.status(400).send(err.message);
     }
-
-    const content = sanitizeText(req.file.buffer.toString("utf8"));
-    const lines = wordWrap(content, CHARS_PER_LINE);
-    const allPages = paginate(lines, LINES_PER_PAGE);
-
-    const startPage = parseInt(req.body?.startPage || "1", 10);
-    const pages = allPages.slice(Math.max(0, startPage - 1));
-
-    res.json({
-      pages,
-      totalPages: pages.length,
-    });
   });
 
-  app.post("/download", upload.single("file"), (req, res) => {
+  app.post("/download", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).send("No file uploaded");
     }
 
-    if (!req.file.originalname.endsWith(".txt")) {
-      return res.status(400).send("Only .txt files are supported");
+    try {
+      const content = await extractText(req.file);
+      const lines = wordWrap(content, CHARS_PER_LINE);
+      const allPages = paginate(lines, LINES_PER_PAGE);
+
+      const startPage = parseInt(req.body?.startPage || "1", 10);
+      if (startPage > allPages.length) {
+        return res.status(400).send("startPage exceeds total pages");
+      }
+      const pages = allPages.slice(Math.max(0, startPage - 1));
+      const { text, index } = buildIndex(pages);
+
+      res.set("Content-Type", "application/zip");
+      res.set("Content-Disposition", 'attachment; filename="book.zip"');
+
+      const archive = archiver("zip");
+      archive.pipe(res);
+      archive.append(text, { name: "book.txt" });
+      archive.append(index, { name: "book.idx" });
+      archive.finalize();
+    } catch (err) {
+      return res.status(400).send(err.message);
     }
-
-    const content = sanitizeText(req.file.buffer.toString("utf8"));
-    const lines = wordWrap(content, CHARS_PER_LINE);
-    const allPages = paginate(lines, LINES_PER_PAGE);
-
-    const startPage = parseInt(req.body?.startPage || "1", 10);
-    if (startPage > allPages.length) {
-      return res.status(400).send("startPage exceeds total pages");
-    }
-    const pages = allPages.slice(Math.max(0, startPage - 1));
-    const { text, index } = buildIndex(pages);
-
-    res.set("Content-Type", "application/zip");
-    res.set("Content-Disposition", 'attachment; filename="book.zip"');
-
-    const archive = archiver("zip");
-    archive.pipe(res);
-    archive.append(text, { name: "book.txt" });
-    archive.append(index, { name: "book.idx" });
-    archive.finalize();
   });
 
-  app.post("/download/raw", upload.single("file"), (req, res) => {
+  app.post("/download/raw", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).send("No file uploaded");
     }
 
-    if (!req.file.originalname.endsWith(".txt")) {
-      return res.status(400).send("Only .txt files are supported");
+    try {
+      const content = await extractText(req.file);
+      const lines = wordWrap(content, CHARS_PER_LINE);
+      const allPages = paginate(lines, LINES_PER_PAGE);
+
+      const startPage = parseInt(req.body?.startPage || "1", 10);
+      if (startPage > allPages.length) {
+        return res.status(400).send("startPage exceeds total pages");
+      }
+      const pages = allPages.slice(Math.max(0, startPage - 1));
+      const { text, index } = buildIndex(pages);
+
+      res.json({
+        bookTxt: text,
+        bookIdx: Array.from(index),
+      });
+    } catch (err) {
+      return res.status(400).send(err.message);
     }
-
-    const content = sanitizeText(req.file.buffer.toString("utf8"));
-    const lines = wordWrap(content, CHARS_PER_LINE);
-    const allPages = paginate(lines, LINES_PER_PAGE);
-
-    const startPage = parseInt(req.body?.startPage || "1", 10);
-    if (startPage > allPages.length) {
-      return res.status(400).send("startPage exceeds total pages");
-    }
-    const pages = allPages.slice(Math.max(0, startPage - 1));
-    const { text, index } = buildIndex(pages);
-
-    res.json({
-      bookTxt: text,
-      bookIdx: Array.from(index),
-    });
   });
 
-  app.post("/download/image", upload.single("file"), (req, res) => {
+  app.post("/download/image", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).send("No file uploaded");
     }
 
-    if (!req.file.originalname.endsWith(".txt")) {
-      return res.status(400).send("Only .txt files are supported");
+    let content;
+    try {
+      content = await extractText(req.file);
+    } catch (err) {
+      return res.status(400).send(err.message);
     }
 
-    const content = sanitizeText(req.file.buffer.toString("utf8"));
     const lines = wordWrap(content, CHARS_PER_LINE);
     const allPages = paginate(lines, LINES_PER_PAGE);
 
